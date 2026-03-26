@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+
+  backend:
+    build: ./backend
+    container_name: wordle-backend
+    ports:
+      - "8080:8080"
+    networks:
+      - wordle-net
+
+  frontend:
+    build: ./frontend
+    container_name: wordle-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - wordle-net
+
+networks:
+  wordle-net:
+    driver: bridge

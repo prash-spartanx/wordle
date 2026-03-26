@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WORDLE</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --border: #2e2e2e;
+    --text: #f0ece0;
+    --muted: #555;
+    --correct: #4d9e6e;
+    --exists: #c9963a;
+    --incorrect: #2e2e2e;
+    --key-bg: #2a2a2a;
+    --key-text: #f0ece0;
+    --tile-size: 62px;
+    --gap: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px 0 12px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.4rem;
+    letter-spacing: 0.25em;
+    color: var(--text);
+  }
+
+  #status-pill {
+    position: absolute;
+    right: 0;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* ── BOARD ── */
+  #board-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 0 16px;
+  }
+
+  #board {
+    display: grid;
+    grid-template-rows: repeat(6, var(--tile-size));
+    gap: var(--gap);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(5, var(--tile-size));
+    gap: var(--gap);
+  }
+
+  .tile {
+    width: var(--tile-size);
+    height: var(--tile-size);
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    background: var(--surface);
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.5s ease;
+    user-select: none;
+  }
+
+  /* pop when letter typed */
+  .tile.pop {
+    animation: pop 0.1s ease;
+  }
+  @keyframes pop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+
+  /* shake on invalid */
+  .row.shake {
+    animation: shake 0.4s ease;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%     { transform: translateX(-6px); }
+    40%     { transform: translateX(6px); }
+    60%     { transform: translateX(-4px); }
+    80%     { transform: translateX(4px); }
+  }
+
+  /* flip reveal */
+  .tile.flip {
+    animation: flip 0.6s ease forwards;
+  }
+  @keyframes flip {
+    0%   { transform: rotateX(0deg); }
+    49%  { transform: rotateX(90deg); }
+    50%  { transform: rotateX(90deg); }
+    100% { transform: rotateX(0deg); }
+  }
+
+  .tile[data-status="CORRECT"]   { border-color: var(--correct); background: var(--correct); color: #fff; }
+  .tile[data-status="EXISTS"]    { border-color: var(--exists);  background: var(--exists);  color: #fff; }
+  .tile[data-status="INCORRECT"] { border-color: var(--incorrect); background: var(--incorrect); color: var(--muted); }
+
+  /* active row highlight */
+  .row.active .tile:not([data-status]) {
+    border-color: #444;
+  }
+
+  /* ── KEYBOARD ── */
+  #keyboard {
+    width: 100%;
+    max-width: 500px;
+    padding: 0 8px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .kb-row {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .key {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--key-bg);
+    color: var(--key-text);
+    border: none;
+    border-radius: 4px;
+    height: 54px;
+    min-width: 36px;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: background 0.3s, color 0.3s, transform 0.1s;
+    flex: 1;
+    max-width: 42px;
+  }
+
+  .key.wide { max-width: 64px; font-size: 0.65rem; }
+
+  .key:active { transform: scale(0.93); }
+
+  .key[data-status="CORRECT"]   { background: var(--correct); color: #fff; }
+  .key[data-status="EXISTS"]    { background: var(--exists);  color: #fff; }
+  .key[data-status="INCORRECT"] { background: var(--incorrect); color: var(--muted); }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    background: var(--text);
+    color: var(--bg);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    border-radius: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 100;
+    white-space: nowrap;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── END SCREEN ── */
+  #end-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,10,0.92);
+    backdrop-filter: blur(6px);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 28px;
+    z-index: 200;
+    animation: fadeIn 0.4s ease;
+  }
+  #end-screen.show { display: flex; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  #end-icon {
+    font-size: 3.5rem;
+    line-height: 1;
+  }
+
+  #end-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    letter-spacing: 0.3em;
+    color: var(--text);
+  }
+
+  #end-word-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  #end-word {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.4rem;
+    letter-spacing: 0.4em;
+    color: var(--correct);
+  }
+
+  #end-attempts {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  #play-again {
+    margin-top: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 12px 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  #play-again:hover {
+    background: var(--surface);
+    border-color: #555;
+  }
+
+  /* ── LOADER ── */
+  #loader {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    transition: opacity 0.4s;
+  }
+  #loader.hide { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Loader -->
+<div id="loader"><div class="spinner"></div></div>
+
+<!-- Header -->
+<header>
+  <h1>Wordle</h1>
+  <div id="status-pill">Loading...</div>
+</header>
+
+<!-- Board -->
+<div id="board-wrap">
+  <div id="board"></div>
+</div>
+
+<!-- Keyboard -->
+<div id="keyboard">
+  <div class="kb-row" id="kb-row-1"></div>
+  <div class="kb-row" id="kb-row-2"></div>
+  <div class="kb-row" id="kb-row-3"></div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- End Screen -->
+<div id="end-screen">
+  <div id="end-icon"></div>
+  <div id="end-title"></div>
+  <div id="end-word-label">The word was</div>
+  <div id="end-word"></div>
+  <div id="end-attempts"></div>
+  <button id="play-again">Play Again</button>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────
+const API_BASE = 'http://backend:8080/api/game';
+const MAX_ATTEMPTS = 6;
+const WORD_LENGTH = 5;
+const KB_ROWS = [
+  ['Q','W','E','R','T','Y','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['ENTER','Z','X','C','V','B','N','M','←']
+];
+
+// ── STATE ────────────────────────────────────────────────────────────
+let sessionId = null;
+let currentRow = 0;
+let currentCol = 0;
+let currentGuess = [];
+let gameOver = false;
+let submitting = false;
+let revealedWord = '';
+
+// ── DOM REFS ─────────────────────────────────────────────────────────
+const board       = document.getElementById('board');
+const toast       = document.getElementById('toast');
+const endScreen   = document.getElementById('end-screen');
+const loader      = document.getElementById('loader');
+const statusPill  = document.getElementById('status-pill');
+const playAgain   = document.getElementById('play-again');
+
+// ── BUILD BOARD ──────────────────────────────────────────────────────
+function buildBoard() {
+  board.innerHTML = '';
+  for (let r = 0; r < MAX_ATTEMPTS; r++) {
+    const row = document.createElement('div');
+    row.classList.add('row');
+    row.id = `row-${r}`;
+    for (let c = 0; c < WORD_LENGTH; c++) {
+      const tile = document.createElement('div');
+      tile.classList.add('tile');
+      tile.id = `tile-${r}-${c}`;
+      row.appendChild(tile);
+    }
+    board.appendChild(row);
+  }
+  highlightActiveRow();
+}
+
+// ── BUILD KEYBOARD ────────────────────────────────────────────────────
+function buildKeyboard() {
+  KB_ROWS.forEach((keys, i) => {
+    const row = document.getElementById(`kb-row-${i + 1}`);
+    row.innerHTML = '';
+    keys.forEach(k => {
+      const btn = document.createElement('button');
+      btn.classList.add('key');
+      if (k === 'ENTER' || k === '←') btn.classList.add('wide');
+      btn.textContent = k;
+      btn.dataset.key = k;
+      btn.addEventListener('click', () => handleKey(k));
+      row.appendChild(btn);
+    });
+  });
+}
+
+// ── HIGHLIGHT ACTIVE ROW ──────────────────────────────────────────────
+function highlightActiveRow() {
+  document.querySelectorAll('.row').forEach(r => r.classList.remove('active'));
+  const activeRow = document.getElementById(`row-${currentRow}`);
+  if (activeRow) activeRow.classList.add('active');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, duration = 1800) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// ── KEY HANDLER ───────────────────────────────────────────────────────
+function handleKey(key) {
+  if (gameOver || submitting) return;
+
+  if (key === '←' || key === 'Backspace') {
+    deleteLetter();
+  } else if (key === 'ENTER' || key === 'Enter') {
+    submitGuess();
+  } else if (/^[A-Za-z]$/.test(key)) {
+    addLetter(key.toUpperCase());
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Backspace') handleKey('Backspace');
+  else if (e.key === 'Enter') handleKey('Enter');
+  else handleKey(e.key);
+});
+
+// ── ADD / DELETE LETTER ───────────────────────────────────────────────
+function addLetter(letter) {
+  if (currentCol >= WORD_LENGTH) return;
+  currentGuess.push(letter);
+  const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+  tile.textContent = letter;
+  tile.classList.add('pop');
+  tile.addEventListener('animationend', () => tile.classList.remove('pop'), { once: true });
+  currentCol++;
+}
+
+function deleteLetter() {
+  if (currentCol <= 0) return;
+  currentCol--;
+  currentGuess.pop();
+  const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+  tile.textContent = '';
+}
+
+// ── SUBMIT GUESS ──────────────────────────────────────────────────────
+async function submitGuess() {
+  if (currentGuess.length < WORD_LENGTH) {
+    shakeRow(currentRow);
+    showToast('Not enough letters');
+    return;
+  }
+
+  submitting = true;
+  const word = currentGuess.join('');
+
+  try {
+    let data;
+
+    if (window._demoMode) {
+      // demo path — no fetch, simulate locally
+      data = await demoEvaluate(word);
+    } else {
+      // real backend path
+      const res = await fetch(`${API_BASE}/guess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, guessedWord: word })
+      });
+
+      if (!res.ok) {
+    	const err = await res.json();
+    	showToast(err.message || 'Something went wrong');
+    	shakeRow(currentRow);   // ← also shake the row for bad word
+    	submitting = false;
+    	return;
+      }
+
+      data = await res.json();
+      // After: const data = await res.json();  add this line:
+      if (data.revealedWord) revealedWord = data.revealedWord;
+    }
+
+    await revealRow(data.letterResults);
+    updateKeyboard(data.letterResults);
+
+    statusPill.textContent = window._demoMode
+      ? `${data.attemptsRemaining} left · Demo`
+      : `${data.attemptsRemaining} left`;
+
+    currentRow++;
+    currentCol = 0;
+    currentGuess = [];
+    highlightActiveRow();
+
+    if (data.gameStatus === 'WON') {
+      gameOver = true;
+      setTimeout(() => showEndScreen('WON', data.attemptsRemaining), 400);
+    } else if (data.gameStatus === 'LOST') {
+      gameOver = true;
+      setTimeout(() => showEndScreen('LOST', 0), 400);
+    }
+
+  } catch (e) {
+    showToast('Cannot reach server');
+  }
+
+  submitting = false;
+}
+
+// ── REVEAL ROW (flip + color) ─────────────────────────────────────────
+function revealRow(letterResults) {
+  return new Promise(resolve => {
+    letterResults.forEach((lr, i) => {
+      const tile = document.getElementById(`tile-${currentRow}-${i}`);
+      const delay = i * 320;
+
+      setTimeout(() => {
+        tile.classList.add('flip');
+
+        // at halfway point of flip, apply color
+        setTimeout(() => {
+          tile.dataset.status = lr.guessStatus;
+        }, 300);
+
+        if (i === letterResults.length - 1) {
+          setTimeout(resolve, 320 + 300);
+        }
+      }, delay);
+    });
+  });
+}
+
+// ── UPDATE KEYBOARD COLORS ────────────────────────────────────────────
+const STATUS_PRIORITY = { CORRECT: 3, EXISTS: 2, INCORRECT: 1 };
+
+function updateKeyboard(letterResults) {
+  letterResults.forEach(lr => {
+    const key = document.querySelector(`.key[data-key="${lr.letter}"]`);
+    if (!key) return;
+    const current = key.dataset.status;
+    const newPriority = STATUS_PRIORITY[lr.guessStatus] || 0;
+    const curPriority = STATUS_PRIORITY[current] || 0;
+    if (newPriority > curPriority) {
+      key.dataset.status = lr.guessStatus;
+    }
+  });
+}
+
+// ── SHAKE ROW ────────────────────────────────────────────────────────
+function shakeRow(rowIndex) {
+  const row = document.getElementById(`row-${rowIndex}`);
+  row.classList.add('shake');
+  row.addEventListener('animationend', () => row.classList.remove('shake'), { once: true });
+}
+
+// ── END SCREEN ────────────────────────────────────────────────────────
+function showEndScreen(status, attemptsRemaining) {
+  document.getElementById('end-icon').textContent   = status === 'WON' ? '🟩' : '🟥';
+  document.getElementById('end-title').textContent  = status === 'WON' ? 'Brilliant' : 'Game Over';
+  document.getElementById('end-word').textContent   = revealedWord || '?????';
+  document.getElementById('end-attempts').textContent =
+    status === 'WON'
+      ? `Solved in ${MAX_ATTEMPTS - attemptsRemaining} / ${MAX_ATTEMPTS} attempts`
+      : `Better luck next time`;
+  endScreen.classList.add('show');
+}
+
+// ── START GAME ────────────────────────────────────────────────────────
+async function startGame() {
+  gameOver = false;
+  submitting = false;
+  currentRow = 0;
+  currentCol = 0;
+  currentGuess = [];
+  revealedWord = '';
+  sessionId = null;
+  window._demoMode = false;  // always reset — prevents stale demo flag
+
+  endScreen.classList.remove('show');
+  loader.classList.remove('hide');
+  statusPill.textContent = 'Loading...';
+
+  buildBoard();
+  buildKeyboard();
+
+  // reset all key statuses
+  document.querySelectorAll('.key').forEach(k => delete k.dataset.status);
+
+  try {
+    const res = await fetch(`${API_BASE}/start`, { method: 'POST' });
+    if (!res.ok) throw new Error('Server error');
+    const data = await res.json();
+    sessionId = data.sessionId;
+    statusPill.textContent = `${data.maxAttempts} left`;
+  } catch (e) {
+    statusPill.textContent = 'Offline';
+    showToast('Could not connect to server', 3000);
+
+    // ── DEMO MODE (no backend) ───────────────────────────────────────
+    // Comment this block out when your backend is running
+    sessionId = 'demo-session';
+    statusPill.textContent = '6 left · Demo';
+    enableDemoMode();
+    // ────────────────────────────────────────────────────────────────
+  }
+
+  loader.classList.add('hide');
+}
+
+// ── DEMO MODE ─────────────────────────────────────────────────────────
+// Simulates backend when Spring Boot is not reachable
+// window._demoMode is set to true only inside the catch block of startGame
+let _demoAttempts = 0;
+const _demoWord = 'CRANE';
+
+function enableDemoMode() {
+  window._demoMode = true;
+  _demoAttempts = 0;
+  revealedWord = _demoWord;
+}
+
+async function demoEvaluate(word) {
+  _demoAttempts++;
+  const targetArr = _demoWord.split('');
+  const guessArr  = word.split('');
+  const used      = Array(5).fill(false);
+  const matched   = Array(5).fill(false);
+  const statuses  = Array(5).fill('INCORRECT');
+
+  // pass 1 — CORRECT
+  for (let i = 0; i < 5; i++) {
+    if (guessArr[i] === targetArr[i]) {
+      statuses[i] = 'CORRECT';
+      used[i]    = true;
+      matched[i] = true;
+    }
+  }
+  // pass 2 — EXISTS
+  for (let i = 0; i < 5; i++) {
+    if (matched[i]) continue;
+    for (let j = 0; j < 5; j++) {
+      if (!used[j] && targetArr[j] === guessArr[i]) {
+        statuses[i] = 'EXISTS';
+        used[j] = true;
+        break;
+      }
+    }
+  }
+
+  const letterResults    = guessArr.map((l, i) => ({ index: i, letter: l, status: statuses[i] }));
+  const wordGuessed      = statuses.every(s => s === 'CORRECT');
+  const attemptsRemaining = MAX_ATTEMPTS - _demoAttempts;
+  let gameStatus = 'IN_PROGRESS';
+  if (wordGuessed)              gameStatus = 'WON';
+  else if (_demoAttempts >= MAX_ATTEMPTS) gameStatus = 'LOST';
+
+  return { letterResults, wordGuessed, currentAttempt: _demoAttempts, attemptsRemaining, gameStatus };
+}
+
+// ── PLAY AGAIN ────────────────────────────────────────────────────────
+playAgain.addEventListener('click', startGame);
+
+// ── BOOT ──────────────────────────────────────────────────────────────
+startGame();
+</script>
+</body>
+</html>
